@@ -1,9 +1,7 @@
+# (C) 2013 by Rupert Lloyd  <rupert.lloyd@gmail.com>
 import os
 import numpy
 from matplotlib.pylab import *
-
-# settings for time, samplerate etc.
-
 
 # calculate some basic LTE time intervals
 # see http://lteuniversity.com/get_trained/expert_opinion1/b/hoomanrazani/archive/2009/03/26/the-basic-unit-of-time-in-lte.aspx
@@ -18,7 +16,6 @@ lte_subframelen  = 2.*lte_tslotlen
 lte_subcarrier_spacing = 15000.
 lte_rb_bw        = lte_subcarrier_spacing*12.
 
-# note that openlte uses signed bytes
 def char2float(char):
     val = ord(char)
     if val < 128:
@@ -33,11 +30,23 @@ def bytes2complex(buf):
     return cvals
 
 def ms_values(nsamples,samplerate):
+    'return an array of milliseconds for nsamples@samplerate'
     return [x*1000./samplerate for x in range(nsamples)]
 
+def load_complex_baseband(path,samplerate,nframes):
+    # read samples
+    bytes_per_frame = int(2*samplerate*lte_framelen)
+    # read frame samples
+    fd = open(path,'rb')
+    framebytes = fd.read(bytes_per_frame*nframes)
+    fd.close()
+    return bytes2complex(framebytes)
 
+def spectrogram(cvals,samplerate,nframes=1,bandzoom=None,interp='none'):
+    """plot a spectrogram of an array of complex samples, cvals, at samplerate samples/s. 
+       Plot nframes of data across the x & zoom to the central bandzoom(Hz) in the yaxis
+       use interp see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow""" 
 
-def spectrogram(cvals,samplerate,nframes,interp='none'):
     binlen = lte_symlen/2.
     nbins = nframes*int(lte_framelen/binlen)
     nfft  = int(samplerate/lte_subcarrier_spacing)
@@ -64,26 +73,46 @@ def spectrogram(cvals,samplerate,nframes,interp='none'):
     xticks(binvals,times)
 
     # limit to signal bandwidth
-    ylim([700,1350])
-    #xlim([0,50])
+    if bandzoom is None:
+        bandzoom = samplerate
+    bandrange = nfft*bandzoom/samplerate    
+    ylim([(nfft-bandrange)/2.,(nfft+bandrange)/2.])
 
     grid(color='yellow', linestyle='-', linewidth=0.5)
 
     show()
 
 if __name__ == "__main__":
-    samplerate = 30.72e6 
-    path = r'C:\Users\rlloyd\Dropbox\vmshared\baseband\openlte_default.bin'
-    nframes = 4
-    interp='bilinear'
+    from optparse import OptionParser
+    usage=  """usage: %prog [options...] <file>
+Options:
+    -r/--rate <freq in Hz>  : sample rate of baseband (samples/s)
+    -z/--zoom <freq in Hz>  : center zoom on frequency axis
+    -n/--frames <n>         : display <n> radio frames along x-axis
+    -i/--interpolation <i>  : image interploation (see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow)
+"""
+    parser = OptionParser(usage)
+    parser.add_option("-r", "--rate", dest="samplerate",type='float',default=30.72e6)
+    parser.add_option("-z", "--zoom", dest="zoom",type='float')
+    parser.add_option("-n", "--frames", dest="nframes",type='int',default=1)
+    parser.add_option("-i", "--interpolation", dest="interp",default='hamming')
+    (options, args) = parser.parse_args()
+    if len(args) != 1:
+        parser.print_usage()
+        exit(1)
+    else:
+        filepath = args[0]
+        if os.path.exists(filepath) is False:
+            print 'baseband file %s not found' % filepath
+            exit(1)
+    if options.zoom is None:
+        options.zoom = options.samplerate
 
-    assert os.path.exists(path)
-    # read samples
-    bytes_per_frame = int(2*samplerate*lte_framelen)
-    bytes_per_symbol = int(2*samplerate*lte_symlen)
-    # read frame samples
-    fd = open(path,'rb')
-    framebytes = fd.read(bytes_per_frame*nframes)
-    fd.close()
-    cvals  = bytes2complex(framebytes)
-    spectrogram(cvals,samplerate,nframes,interp)
+    cvals = load_complex_baseband(  filepath,
+                                    options.samplerate,
+                                    options.nframes)
+    spectrogram(cvals,
+                options.samplerate,
+                nframes=options.nframes,
+                bandzoom=options.zoom,
+                interp=options.interp)
