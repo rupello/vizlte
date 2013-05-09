@@ -4,10 +4,6 @@ from matplotlib.pylab import *
 
 # settings for time, samplerate etc.
 
-samplerate = 30.72e6 
-path = r'C:\Users\rlloyd\Dropbox\vmshared\baseband\openlte_default.bin'
-nframes = 4
-interp='bilinear'
 
 # calculate some basic LTE time intervals
 # see http://lteuniversity.com/get_trained/expert_opinion1/b/hoomanrazani/archive/2009/03/26/the-basic-unit-of-time-in-lte.aspx
@@ -39,49 +35,55 @@ def bytes2complex(buf):
 def ms_values(nsamples,samplerate):
     return [x*1000./samplerate for x in range(nsamples)]
 
-bytes_per_frame = int(2*samplerate*lte_framelen)
-bytes_per_symbol = int(2*samplerate*lte_symlen)
 
-# read samples
-assert os.path.exists(path)
-# read frame samples
-fd = open(path,'rb')
-framebytes = fd.read(bytes_per_frame*nframes)
-fd.close()
 
-cvals  = bytes2complex(framebytes)
+def spectrogram(cvals,samplerate,nframes,interp='none'):
+    binlen = lte_symlen/2.
+    nbins = nframes*int(lte_framelen/binlen)
+    nfft  = int(samplerate/lte_subcarrier_spacing)
 
-binlen = lte_symlen/2.
-nbins = nframes*int(lte_framelen/binlen)
+    stacked = []
+    for nbin in range(nbins):
+        binvals = cvals[int(samplerate*binlen)*nbin:int(samplerate*binlen)*(nbin+1)]
+        fft = abs(numpy.fft.fftshift(numpy.fft.fft(binvals,nfft)))
+        stacked.append(fft)
 
-nfft  = int(samplerate/lte_subcarrier_spacing)
+    fig, ax = subplots(figsize=(24, 12))
+    ax.imshow(numpy.vstack(stacked).transpose(),interpolation=interp, aspect='auto',cmap=cm.jet)
 
-stacked = []
+    # yticks correspond to resource blocks spacing lte_rb_bw - starting from the center out
+    rb_freqs = np.append(-arange(lte_rb_bw,samplerate/2,lte_rb_bw),arange(0.,samplerate/2,lte_rb_bw))
+    rb_freqs.sort()
+    scaled = [nfft/2.+(nfft*f/samplerate) for f in rb_freqs]
+    yticks(scaled,['%2.2f' % (f*1.e-6) for f in rb_freqs])
 
-for nbin in range(nbins):
-    binvals = cvals[int(samplerate*binlen)*nbin:int(samplerate*binlen)*(nbin+1)]
-    fft = abs(numpy.fft.fftshift(numpy.fft.fft(binvals,nfft)))
-    stacked.append(fft)
+    # xticks coorespond to timeslots
+    timestep = lte_subframelen*1000. # 0.5 ms
+    times = arange(0.,nframes*lte_framelen*1000., timestep)
+    binvals = arange(0,nbins,nbins/len(times))
+    xticks(binvals,times)
 
-fig, ax = subplots(figsize=(24, 12))
-ax.imshow(numpy.vstack(stacked).transpose(),interpolation=interp, aspect='auto',cmap=cm.jet)
+    # limit to signal bandwidth
+    ylim([700,1350])
+    #xlim([0,50])
 
-# yticks correspond to resource blocks spacing lte_rb_bw - starting from the center out
-rb_freqs = np.append(-arange(lte_rb_bw,samplerate/2,lte_rb_bw),arange(0.,samplerate/2,lte_rb_bw))
-rb_freqs.sort()
-scaled = [nfft/2.+(nfft*f/samplerate) for f in rb_freqs]
-yticks(scaled,['%2.2f' % (f*1.e-6) for f in rb_freqs])
+    grid(color='yellow', linestyle='-', linewidth=0.5)
 
-# xticks coorespond to timeslots
-timestep = lte_subframelen*1000. # 0.5 ms
-times = arange(0.,nframes*lte_framelen*1000., timestep)
-binvals = arange(0,nbins,nbins/len(times))
-xticks(binvals,times)
+    show()
 
-# limit to signal bandwidth
-ylim([700,1350])
-#xlim([0,50])
+if __name__ == "__main__":
+    samplerate = 30.72e6 
+    path = r'C:\Users\rlloyd\Dropbox\vmshared\baseband\openlte_default.bin'
+    nframes = 4
+    interp='bilinear'
 
-grid(color='yellow', linestyle='-', linewidth=0.5)
-
-show()
+    assert os.path.exists(path)
+    # read samples
+    bytes_per_frame = int(2*samplerate*lte_framelen)
+    bytes_per_symbol = int(2*samplerate*lte_symlen)
+    # read frame samples
+    fd = open(path,'rb')
+    framebytes = fd.read(bytes_per_frame*nframes)
+    fd.close()
+    cvals  = bytes2complex(framebytes)
+    spectrogram(cvals,samplerate,nframes,interp)
