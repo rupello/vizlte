@@ -19,9 +19,9 @@ lte_rb_bw        = lte_subcarrier_spacing*12.
 def char2float(char):
     val = ord(char)
     if val < 128:
-        return float(val)
+        return float(val)/258.
     else:
-        return float(val-256)
+        return float(val-256)/258.
     
 def bytes2complex(buf):
     cvals = []
@@ -34,7 +34,7 @@ def ms_values(nsamples,samplerate):
     return [x*1000./samplerate for x in range(nsamples)]
 
 def load_complex_baseband(path,samplerate,nframes):
-    # read samples
+    'load & convert nframes of 8bit I/Q samples from path'
     bytes_per_frame = int(2*samplerate*lte_framelen)
     # read frame samples
     fd = open(path,'rb')
