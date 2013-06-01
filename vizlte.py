@@ -16,15 +16,28 @@ lte_subframelen  = 2.*lte_tslotlen
 lte_subcarrier_spacing = 15000.
 lte_rb_bw        = lte_subcarrier_spacing*12.
 
-def char2float(char):
+# note that openlte uses signed bytes
+def char2float_signed(char):
     val = ord(char)
     if val < 128:
-        return float(val)/258.
+        return float(val)
     else:
-        return float(val-256)/258.
+        return float(val-256)
+
+# for rtlsdr uses 0-255 maps to -1 to +1
+def char2float_usigned(char):
+    val = ord(char)
+    return (float(val)-127.)/128.0
     
-def bytes2complex(buf):
+def bytes2complex(buf,sample_format='S8'):
     cvals = []
+    if sample_format=='U8':
+        char2float = char2float_usigned
+    elif sample_format=='S8':
+        char2float = char2float_signed
+    else:
+        raise Exception("don't recognize format %s" % sample_format)
+
     for i in range(0,len(buf),2):
         cvals.append(complex(char2float(buf[i]),char2float(buf[i+1])))
     return cvals
@@ -33,27 +46,26 @@ def ms_values(nsamples,samplerate):
     'return an array of milliseconds for nsamples@samplerate'
     return [x*1000./samplerate for x in range(nsamples)]
 
-def load_complex_baseband(path,samplerate,nframes):
+def load_complex_baseband(path,samplerate,nframes,sampleformat='S8'):
     'load & convert nframes of 8bit I/Q samples from path'
     bytes_per_frame = int(2*samplerate*lte_framelen)
     # read frame samples
     fd = open(path,'rb')
     framebytes = fd.read(bytes_per_frame*nframes)
     fd.close()
-    return bytes2complex(framebytes)
+    return bytes2complex(framebytes,sampleformat)
 
 def spectrogram(cvals,samplerate,nframes=1,bandzoom=None,interp='none'):
     """plot a spectrogram of an array of complex samples, cvals, at samplerate samples/s. 
        Plot nframes of data across the x & zoom to the central bandzoom(Hz) in the yaxis
        use interp see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow""" 
 
-    binlen = lte_symlen/2.
-    nbins = nframes*int(lte_framelen/binlen)
     nfft  = int(samplerate/lte_subcarrier_spacing)
+    nbins = len(cvals)/nfft 
 
     stacked = []
     for nbin in range(nbins):
-        binvals = cvals[int(samplerate*binlen)*nbin:int(samplerate*binlen)*(nbin+1)]
+        binvals = cvals[nfft*nbin:nfft*(nbin+1)]
         fft = abs(numpy.fft.fftshift(numpy.fft.fft(binvals,nfft)))
         stacked.append(fft)
 
@@ -90,9 +102,11 @@ Options:
     -z/--zoom <freq in Hz>  : center zoom on frequency axis
     -n/--frames <n>         : display <n> radio frames along x-axis
     -i/--interpolation <i>  : image interploation (see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow)
+    -f/--format <format>    : (U8=unsigned 8-bit I/Q, S8=signed 8-bit I/Q)
 """
     parser = OptionParser(usage)
     parser.add_option("-r", "--rate", dest="samplerate",type='float',default=30.72e6)
+    parser.add_option("-f", "--format", dest="sampleformat",default='S8')
     parser.add_option("-z", "--zoom", dest="zoom",type='float')
     parser.add_option("-n", "--frames", dest="nframes",type='int',default=1)
     parser.add_option("-i", "--interpolation", dest="interp",default='hamming')
@@ -110,7 +124,8 @@ Options:
 
     cvals = load_complex_baseband(  filepath,
                                     options.samplerate,
-                                    options.nframes)
+                                    options.nframes,
+                                    options.sampleformat)
     spectrogram(cvals,
                 options.samplerate,
                 nframes=options.nframes,
