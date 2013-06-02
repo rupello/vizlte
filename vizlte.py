@@ -53,9 +53,11 @@ def load_complex_baseband(path,samplerate,nframes,sampleformat='S8'):
     fd = open(path,'rb')
     framebytes = fd.read(bytes_per_frame*nframes)
     fd.close()
+    if len(framebytes) < bytes_per_frame*nframes:
+        print "Warning! requested %d frames, loaded %d" % (nframes,len(framebytes)/bytes_per_frame)
     return bytes2complex(framebytes,sampleformat)
 
-def spectrogram(cvals,samplerate,nframes=1,bandzoom=None,interp='none'):
+def spectrogram(cvals,samplerate,bandzoom=None,interp='none'):
     """plot a spectrogram of an array of complex samples, cvals, at samplerate samples/s. 
        Plot nframes of data across the x & zoom to the central bandzoom(Hz) in the yaxis
        use interp see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow""" 
@@ -79,8 +81,9 @@ def spectrogram(cvals,samplerate,nframes=1,bandzoom=None,interp='none'):
     yticks(scaled,['%2.2f' % (f*1.e-6) for f in rb_freqs])
 
     # xticks coorespond to timeslots
-    timestep = lte_subframelen*1000. # 0.5 ms
-    times = arange(0.,nframes*lte_framelen*1000., timestep)
+    total_ms = 1000.*len(cvals)/samplerate
+    timestep = lte_subframelen*1000. # 1. ms
+    times = arange(0.,total_ms, timestep)
     binvals = arange(0,nbins,nbins/len(times))
     xticks(binvals,times)
 
@@ -128,6 +131,5 @@ Options:
                                     options.sampleformat)
     spectrogram(cvals,
                 options.samplerate,
-                nframes=options.nframes,
                 bandzoom=options.zoom,
                 interp=options.interp)
