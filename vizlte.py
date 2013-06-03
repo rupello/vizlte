@@ -46,18 +46,19 @@ def ms_values(nsamples,samplerate):
     'return an array of milliseconds for nsamples@samplerate'
     return [x*1000./samplerate for x in range(nsamples)]
 
-def load_complex_baseband(path,samplerate,nframes,sampleformat='S8'):
+def load_complex_baseband(path,samplerate,nframes,sampleformat='S8',nstartframe=0):
     'load & convert nframes of 8bit I/Q samples from path'
     bytes_per_frame = int(2*samplerate*lte_framelen)
     # read frame samples
     fd = open(path,'rb')
+    fd.seek(bytes_per_frame*nstartframe)
     framebytes = fd.read(bytes_per_frame*nframes)
     fd.close()
     if len(framebytes) < bytes_per_frame*nframes:
         print "Warning! requested %d frames, loaded %d" % (nframes,len(framebytes)/bytes_per_frame)
     return bytes2complex(framebytes,sampleformat)
 
-def spectrogram(cvals,samplerate,bandzoom=None,interp='none'):
+def spectrogram(cvals,samplerate,bandzoom=None,interp='none',nstartframe=0):
     """plot a spectrogram of an array of complex samples, cvals, at samplerate samples/s. 
        Plot nframes of data across the x & zoom to the central bandzoom(Hz) in the yaxis
        use interp see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow""" 
@@ -71,7 +72,7 @@ def spectrogram(cvals,samplerate,bandzoom=None,interp='none'):
         fft = abs(numpy.fft.fftshift(numpy.fft.fft(binvals,nfft)))
         stacked.append(fft)
 
-    fig, ax = subplots(figsize=(24, 12))
+    fig, ax = subplots(figsize=(16, 9),dpi=80)
     ax.imshow(numpy.vstack(stacked).transpose(),interpolation=interp, aspect='auto',cmap=cm.jet)
 
     # yticks correspond to resource blocks spacing lte_rb_bw - starting from the center out
@@ -80,22 +81,25 @@ def spectrogram(cvals,samplerate,bandzoom=None,interp='none'):
     scaled = [nfft/2.+(nfft*f/samplerate) for f in rb_freqs]
     yticks(scaled,['%2.2f' % (f*1.e-6) for f in rb_freqs])
 
-    # xticks coorespond to timeslots
+    # major ticks correspond to frame lengths
     total_ms = 1000.*len(cvals)/samplerate
-    timestep = lte_subframelen*1000. # 1. ms
-    times = arange(0.,total_ms, timestep)
+    timestep = lte_framelen*1000. # 10. ms
+    times = arange((nstartframe*lte_framelen*1000.),(nstartframe*lte_framelen*1000.)+total_ms, timestep)
+
     binvals = arange(0,nbins,nbins/len(times))
     xticks(binvals,times)
+    # minor coorespond to sub-framelengths 
+    minor_tick_vals = arange(0,nbins,nbins/(10.*len(times)))
+    ax.set_xticks(minor_tick_vals, minor=True)
 
     # limit to signal bandwidth
     if bandzoom is None:
         bandzoom = samplerate
     bandrange = nfft*bandzoom/samplerate    
     ylim([(nfft-bandrange)/2.,(nfft+bandrange)/2.])
-
-    grid(color='yellow', linestyle='-', linewidth=0.5)
-
-    show()
+    grid(True,color='yellow', linestyle='-', linewidth=0.5, which="minor")
+    grid(True,color='white', linestyle='-', linewidth=0.7, which="major")
+    return fig
 
 if __name__ == "__main__":
     from optparse import OptionParser
@@ -106,12 +110,14 @@ Options:
     -n/--frames <n>         : display <n> radio frames along x-axis
     -i/--interpolation <i>  : image interploation (see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow)
     -f/--format <format>    : (U8=unsigned 8-bit I/Q, S8=signed 8-bit I/Q)
+    -s/--startframe <n>     : start from this frame (default is 0)
 """
     parser = OptionParser(usage)
-    parser.add_option("-r", "--rate", dest="samplerate",type='float',default=30.72e6)
-    parser.add_option("-f", "--format", dest="sampleformat",default='S8')
+    parser.add_option("-r", "--rate", dest="samplerate",type='float',default=1.92e6)
+    parser.add_option("-f", "--format", dest="sampleformat",default='U8')
     parser.add_option("-z", "--zoom", dest="zoom",type='float')
     parser.add_option("-n", "--frames", dest="nframes",type='int',default=1)
+    parser.add_option("-s", "--startframe", dest="startframe",type='int',default=0)
     parser.add_option("-i", "--interpolation", dest="interp",default='hamming')
     (options, args) = parser.parse_args()
     if len(args) != 1:
@@ -128,8 +134,11 @@ Options:
     cvals = load_complex_baseband(  filepath,
                                     options.samplerate,
                                     options.nframes,
-                                    options.sampleformat)
-    spectrogram(cvals,
+                                    options.sampleformat,
+                                    options.startframe)
+    f = spectrogram(cvals,
                 options.samplerate,
                 bandzoom=options.zoom,
-                interp=options.interp)
+                interp=options.interp,
+                nstartframe=options.startframe)
+    show()
