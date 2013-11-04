@@ -1,6 +1,6 @@
 # Visualize LTE baseband traces
 
-![output example](http://i.imgur.com/lP9EHAzl.jpg "output example")
+![output example](http://i.imgur.com/cQgw1ik.png "output example")
 
 ### Usage Examples
 
@@ -16,6 +16,7 @@
 
 #### Plot 4 frames from a full 10MHz LTE live downlink captured with [bladeRF](http://www.nuand.com/)
     python vizlte.py samples/live751MHz_bw10MHz_sampled@15.35MHz.S16 --rate=15.6e6 --format=int16 -n 4 -z 11e6 -s 2
+
 
 
 #### [A playlist](http://www.youtube.com/playlist?list=PLH4IHWtavDd8AcxVIxE9u-CYbFd7qik_6) of movies made with animate.py
