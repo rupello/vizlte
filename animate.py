@@ -25,7 +25,7 @@ Options:
 """
     parser = OptionParser(usage)
     parser.add_option("-r", "--rate", dest="samplerate",type='float',default=1.92e6)
-    parser.add_option("-f", "--format", dest="sampleformat",default='U8')
+    parser.add_option("-f", "--format", dest="sampleformat",default='uint8')
     parser.add_option("-z", "--zoom", dest="zoom",type='float')
     parser.add_option("-n", "--frames", dest="nframes",type='int',default=5)
     parser.add_option("-s", "--startframe", dest="startframe",type='int',default=0)

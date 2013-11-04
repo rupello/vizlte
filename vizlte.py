@@ -16,47 +16,30 @@ lte_subframelen  = 2.*lte_tslotlen
 lte_subcarrier_spacing = 15000.
 lte_rb_bw        = lte_subcarrier_spacing*12.
 
-# note that openlte uses signed bytes
-def char2float_signed(char):
-    val = ord(char)
-    if val < 128:
-        return float(val)
-    else:
-        return float(val-256)
 
-# for rtlsdr uses 0-255 maps to -1 to +1
-def char2float_usigned(char):
-    val = ord(char)
-    return (float(val)-127.)/128.0
-    
-def bytes2complex(buf,sample_format='S8'):
-    cvals = []
-    if sample_format=='U8':
-        char2float = char2float_usigned
-    elif sample_format=='S8':
-        char2float = char2float_signed
-    else:
-        raise Exception("don't recognize format %s" % sample_format)
+def scale_int2float(dt):
+    ' return a function that scales an integer of ype dt to -1. to +1.'
+    scale_min = np.iinfo(dt).min
+    scale_max = np.iinfo(dt).max
+    return lambda x : 2.*float(x - scale_min)/float(scale_max - scale_min)-1.
+ 
+def values2complex(vals,scaler=lambda x:x):
+     'convert a linear array of values to complex samples, using scaling function if specified'
+     cvals = []
+     for i in range(0,len(vals),2):
+         cvals.append(complex(scaler(vals[i]),scaler(vals[i+1])))
+     return cvals
 
-    for i in range(0,len(buf),2):
-        cvals.append(complex(char2float(buf[i]),char2float(buf[i+1])))
-    return cvals
-
-def ms_values(nsamples,samplerate):
-    'return an array of milliseconds for nsamples@samplerate'
-    return [x*1000./samplerate for x in range(nsamples)]
-
-def load_complex_baseband(path,samplerate,nframes,sampleformat='S8',nstartframe=0):
+def load_complex_baseband(path,samplerate,nframes,sampleformat='int8',nstartframe=0.0):
+    bytes_per_value = {'float32':4,'int16':2,'uint16':2,'int8':1,'uint8':8}
     'load & convert nframes of 8bit I/Q samples from path'
-    bytes_per_frame = int(2*samplerate*lte_framelen)
+    values_per_frame = int(2*samplerate*lte_framelen)
+    bytes_per_frame = values_per_frame*bytes_per_value[sampleformat]
     # read frame samples
     fd = open(path,'rb')
     fd.seek(bytes_per_frame*nstartframe)
-    framebytes = fd.read(bytes_per_frame*nframes)
-    fd.close()
-    if len(framebytes) < bytes_per_frame*nframes:
-        print "Warning! requested %d frames, loaded %d" % (nframes,len(framebytes)/bytes_per_frame)
-    return bytes2complex(framebytes,sampleformat)
+    read_data = numpy.fromfile(file=fd, dtype=dtype(sampleformat),count=values_per_frame*nframes)
+    return values2complex(read_data)
 
 def spectrogram(cvals,samplerate,bandzoom=None,interp='none',nstartframe=0):
     """plot a spectrogram of an array of complex samples, cvals, at samplerate samples/s. 
@@ -70,6 +53,7 @@ def spectrogram(cvals,samplerate,bandzoom=None,interp='none',nstartframe=0):
     for nbin in range(nbins):
         binvals = cvals[nfft*nbin:nfft*(nbin+1)]
         fft = abs(numpy.fft.fftshift(numpy.fft.fft(binvals,nfft)))
+        fft[len(fft)/2] = 0. # remove the DC component
         stacked.append(fft)
 
     fig, ax = subplots(figsize=(16, 9),dpi=80)
@@ -114,10 +98,10 @@ Options:
 """
     parser = OptionParser(usage)
     parser.add_option("-r", "--rate", dest="samplerate",type='float',default=1.92e6)
-    parser.add_option("-f", "--format", dest="sampleformat",default='U8')
+    parser.add_option("-f", "--format", dest="sampleformat",default='uint8')
     parser.add_option("-z", "--zoom", dest="zoom",type='float')
     parser.add_option("-n", "--frames", dest="nframes",type='int',default=1)
-    parser.add_option("-s", "--startframe", dest="startframe",type='int',default=0)
+    parser.add_option("-s", "--startframe", dest="startframe",type='float',default=0.)
     parser.add_option("-i", "--interpolation", dest="interp",default='hamming')
     (options, args) = parser.parse_args()
     if len(args) != 1:
