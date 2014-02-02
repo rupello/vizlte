@@ -41,23 +41,30 @@ def load_complex_baseband(path,samplerate,nframes,sampleformat='int8',nstartfram
     read_data = numpy.fromfile(file=fd, dtype=dtype(sampleformat),count=values_per_frame*nframes)
     return values2complex(read_data)
 
-def spectrogram(cvals,samplerate,bandzoom=None,interp='none',nstartframe=0):
+
+def ofdmgrid(cvals,samplerate,subcarrier_spacing):
+    """convert time-domain cvals into OFDM frequency/time grid"""
+    nfft  = int(samplerate/subcarrier_spacing)
+    nsymbolperiods = len(cvals)/nfft
+ 
+    ofdmgrid = numpy.zeros([nsymbolperiods,nfft],dtype=complex)
+    for nbin in range(nsymbolperiods):
+        binvals = cvals[nfft*nbin:nfft*(nbin+1)]
+        fft = (numpy.fft.fftshift(numpy.fft.fft(binvals,nfft)))
+        fft[len(fft)/2] = 0. # remove the DC component
+        ofdmgrid[nbin] = fft
+    return ofdmgrid    
+
+
+def spectrogram(rxgrid,samplerate,bandzoom=None,interp='none',nstartframe=0):
     """plot a spectrogram of an array of complex samples, cvals, at samplerate samples/s. 
        Plot nframes of data across the x & zoom to the central bandzoom(Hz) in the yaxis
        use interp see http://matplotlib.org/api/pyplot_api.html#matplotlib.pyplot.imshow""" 
 
-    nfft  = int(samplerate/lte_subcarrier_spacing)
-    nbins = len(cvals)/nfft 
-
-    stacked = []
-    for nbin in range(nbins):
-        binvals = cvals[nfft*nbin:nfft*(nbin+1)]
-        fft = abs(numpy.fft.fftshift(numpy.fft.fft(binvals,nfft)))
-        fft[len(fft)/2] = 0. # remove the DC component
-        stacked.append(fft)
+    nfft = len(rxgrid[0])
 
     fig, ax = subplots(figsize=(16, 9),dpi=80)
-    ax.imshow(numpy.vstack(stacked).transpose(),interpolation=interp, aspect='auto',cmap=cm.jet)
+    ax.imshow(abs(rxgrid).transpose(),interpolation=interp, aspect='auto',cmap=cm.jet)
 
     # yticks correspond to resource blocks spacing lte_rb_bw - starting from the center out
     rb_freqs = np.append(-arange(lte_rb_bw,samplerate/2,lte_rb_bw),arange(0.,samplerate/2,lte_rb_bw))
@@ -70,10 +77,10 @@ def spectrogram(cvals,samplerate,bandzoom=None,interp='none',nstartframe=0):
     timestep = lte_framelen*1000. # 10. ms
     times = arange((nstartframe*lte_framelen*1000.),(nstartframe*lte_framelen*1000.)+total_ms, timestep)
 
-    binvals = arange(0,nbins,nbins/len(times))
+    binvals = arange(0,len(rxgrid),len(rxgrid)/len(times))
     xticks(binvals,times)
     # minor coorespond to sub-framelengths 
-    minor_tick_vals = arange(0,nbins,nbins/(10.*len(times)))
+    minor_tick_vals = arange(0,len(rxgrid),len(rxgrid)/(10.*len(times)))
     ax.set_xticks(minor_tick_vals, minor=True)
 
     # limit to signal bandwidth
@@ -120,7 +127,10 @@ Options:
                                     options.nframes,
                                     options.sampleformat,
                                     options.startframe)
-    f = spectrogram(cvals,
+
+    rxgrid = ofdmgrid(cvals,options.samplerate,lte_subcarrier_spacing)
+
+    f = spectrogram(rxgrid,
                 options.samplerate,
                 bandzoom=options.zoom,
                 interp=options.interp,
